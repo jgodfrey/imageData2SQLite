@@ -10,7 +10,7 @@ def refresh_db():
 	# create the db file if it doesn't yet exist
 	db = create_open_db(db_file)
 
-	# update the db info with for any added or modified folders since last db refresh
+	# update the db with info for any added or modified folders since last db refresh
 	modified_folders = update_modified_folders(db, picture_dir)
 
 	# update the db with info for any added or modified files since the last db refresh
@@ -120,17 +120,14 @@ def remove_missing_files_and_folders(db, picture_dir):
 
 	# Find files in the db that are no longer on disk
 	file_id_list = []
-	cur = db.cursor()
-	cur.execute('SELECT id, folder, name from file')
-	for row in cur:
+	for row in db.execute('SELECT id, folder, name from file'):
 		file = os.path.join(row['folder'], row['name'])
 		if not os.path.exists(file):
 			file_id_list.append([row['id']])
 
 	# Find folders in the db that are no longer on disk
 	folder_id_list = []
-	cur.execute('SELECT id, name from folder')
-	for row in cur:
+	for row in db.execute('SELECT id, name from folder'):
 		if not os.path.exists(row['name']):
 			folder_id_list.append([row['id']])
 
@@ -145,8 +142,8 @@ def remove_missing_files_and_folders(db, picture_dir):
 	db.commit()
 
 def get_exif_info(file_path_name):
-	EXIF_DATETIME = 36867
-	EXIF_ORIENTATION = 274
+	EXIF_ORIENTATION = 274 # standard Exif Orientation tag id (https://www.exif.org/Exif2-2.PDF)
+	EXIF_DATETIME = 36867  # standard Exif DateTimeOriginal tag id (https://www.exif.org/Exif2-2.PDF)
 	dt = os.path.getmtime(file_path_name) # so use file last modified date
 	orientation = 1
 	width = 0
