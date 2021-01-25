@@ -120,9 +120,8 @@ def remove_missing_files_and_folders(db, picture_dir):
 
 	# Find files in the db that are no longer on disk
 	file_id_list = []
-	for row in db.execute('SELECT id, folder, name from file'):
-		file = os.path.join(row['folder'], row['name'])
-		if not os.path.exists(file):
+	for row in db.execute('SELECT id, folder || "/" || name as full_path from file'):
+		if not os.path.exists(row['full_path']):
 			file_id_list.append([row['id']])
 
 	# Find folders in the db that are no longer on disk
