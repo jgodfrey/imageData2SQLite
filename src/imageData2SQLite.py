@@ -139,7 +139,9 @@ def remove_missing_files_and_folders(db, picture_dir):
 	if len(folder_id_list):
 		db.executemany('DELETE FROM folder WHERE id = ?', folder_id_list)
 
-	db.commit()
+	# If we updated anything, commit the changes
+	if len(file_id_list) or len(folder_id_list):
+		db.commit()
 
 def get_exif_info(file_path_name):
 	EXIF_ORIENTATION = 274 # standard Exif Orientation tag id (https://www.exif.org/Exif2-2.PDF)
