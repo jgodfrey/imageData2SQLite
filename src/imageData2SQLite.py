@@ -58,12 +58,12 @@ def update_modified_folders(db, picture_dir):
 	insert_data = []
 	sql_select = "SELECT * FROM folder WHERE name = ?"
 	sql_update = "INSERT OR REPLACE INTO folder(name, last_modified) VALUES(?, ?)"
-	for dirpath, dirnames, filenames in os.walk(picture_dir):
-		mod_tm = int(os.stat(dirpath).st_mtime)
-		found = db.execute(sql_select, (dirpath,)).fetchone()
+	for dir in [d[0] for d in os.walk(picture_dir)]:
+		mod_tm = int(os.stat(dir).st_mtime)
+		found = db.execute(sql_select, (dir,)).fetchone()
 		if not found or found['last_modified'] < mod_tm:
-			out_of_date_folders.append(dirpath)
-			insert_data.append([dirpath, mod_tm])
+			out_of_date_folders.append(dir)
+			insert_data.append([dir, mod_tm])
 
 	if len(insert_data):
 		db.executemany(sql_update, insert_data)
