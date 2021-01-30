@@ -1,12 +1,13 @@
 import sqlite3
 import os
 import time
-from PIL import Image
 from get_image_meta import GetImageMeta
+
+EXTENSIONS = ['.png','.jpg','.jpeg','.heif','.heic']
 
 class ImageCache:
 
-	def __init__(self, picture_dir):
+	def __init__(self, picture_dir='/home/pi/Pictures'):
 		self.picture_dir = picture_dir
 		self.db_file = "pictureframe2.db3"
 
@@ -144,11 +145,10 @@ class ImageCache:
 		# won't cause problems as the linked records will naturally be updated anyway.
 		sql_select = "SELECT file, last_modified FROM all_data WHERE file = ?"
 		sql_update = "INSERT OR REPLACE INTO file(folder_id, basename, extension, last_modified) VALUES((SELECT folder_id from folder where name = ?), ?, ?, ?)"
-		extensions = ['.png','.jpg','.jpeg','.heif','.heic']
 		for dir in modified_folders:
 			for file in os.listdir(dir):
 				base, extension = os.path.splitext(file)
-				if extension.lower() in extensions:
+				if extension.lower() in EXTENSIONS:
 					full_file = os.path.join(dir, file)
 					mod_tm =  os.path.getmtime(full_file)
 					found = db.execute(sql_select, (full_file,)).fetchone()
@@ -251,5 +251,5 @@ class ImageCache:
 
 # If being executed (instead of imported), kick it off...
 if __name__ == "__main__":
-	cache = ImageCache('/home/pi/Pictures')
+	cache = ImageCache(picture_dir='/home/pi/Pictures')
 	cache.update_cache()
