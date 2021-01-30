@@ -5,7 +5,7 @@ from PIL import Image
 from get_image_meta import GetImageMeta
 
 def update_cache():
-	picture_dir = "/home/pi/Pictures/Alaska"
+	picture_dir = "/home/pi/Pictures"
 	db_file = "pictureframe2.db3"
 
 	t0 = time.time()
