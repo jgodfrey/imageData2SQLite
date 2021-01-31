@@ -50,8 +50,9 @@ class ImageCache:
 		sql = "SELECT * FROM all_data where file_id = {0}".format(file_id)
 		result = self.__db.execute(sql).fetchone()
 		dict = {}
-		for key in result.keys():
-			dict[key] = result[key]
+		if result:
+			for key in result.keys():
+				dict[key] = result[key]
 
 		return dict
 
@@ -268,4 +269,4 @@ if __name__ == "__main__":
 	cache = ImageCache(picture_dir='/home/pi/Pictures')
 	cache.update_cache()
 	# items = cache.query_cache("make like '%google%'", "exif_datetime asc")
-	# info = cache.get_file_info(12)
+	#info = cache.get_file_info(12)
