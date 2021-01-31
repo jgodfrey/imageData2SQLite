@@ -4,14 +4,14 @@ import time
 import logging
 from get_image_meta import GetImageMeta
 
-EXTENSIONS = ['.png','.jpg','.jpeg','.heif','.heic']
-
 class ImageCache:
 
+	EXTENSIONS = ['.png','.jpg','.jpeg','.heif','.heic']
+
 	def __init__(self, picture_dir='/home/pi/Pictures'):
-		self.picture_dir = picture_dir
-		self.db_file = "pictureframe2.db3"
-		self.db = self.__create_open_db(self.db_file)
+		self.__picture_dir = picture_dir
+		self.__db_file = "pictureframe2.db3"
+		self.__db = self.__create_open_db(self.__db_file)
 
 	def update_cache(self):
 
@@ -32,7 +32,20 @@ class ImageCache:
 		t1 = time.time()
 		print("Total: ", t1-t0)
 
-		self.db.commit()
+		self.__db.commit()
+
+	def query_cache(self, where_clause, sort_clause = 'exif_datetime asc'):
+		cursor = self.__db.cursor()
+		cursor.row_factory = None # we don't want the "sqlite3.Row" setting from the db here...
+		sql = """
+			SELECT file_id
+			FROM all_data
+			WHERE {0}
+			ORDER BY {1}
+		""".format(where_clause, sort_clause)
+
+		cursor.execute(sql)
+		return cursor.fetchall()
 
 	def __create_open_db(self, db_file):
 
@@ -109,7 +122,7 @@ class ImageCache:
 			END"""
 
 		db = sqlite3.connect(db_file)
-		db.row_factory = sqlite3.Row
+		db.row_factory = sqlite3.Row # make results accessible by field name
 		for item in (sql_folder_table, sql_file_table, sql_meta_table, sql_all_data_view,
 					sql_clean_file_trigger, sql_clean_meta_trigger):
 			db.execute(item)
@@ -127,16 +140,16 @@ class ImageCache:
 		# though this is redundant in some cases, it seems to be the fastest method.
 		sql_insert = "INSERT OR IGNORE INTO folder(last_modified, name) VALUES(?, ?)"
 		sql_update = "UPDATE folder SET last_modified = ? WHERE name = ?"
-		for dir in [d[0] for d in os.walk(self.picture_dir)]:
+		for dir in [d[0] for d in os.walk(self.__picture_dir)]:
 			mod_tm = int(os.stat(dir).st_mtime)
-			found = self.db.execute(sql_select, (dir,)).fetchone()
+			found = self.__db.execute(sql_select, (dir,)).fetchone()
 			if not found or found['last_modified'] < mod_tm:
 				out_of_date_folders.append(dir)
 				insert_data.append([mod_tm, dir])
 
 		if len(insert_data):
-			self.db.executemany(sql_insert, insert_data)
-			self.db.executemany(sql_update, insert_data)
+			self.__db.executemany(sql_insert, insert_data)
+			self.__db.executemany(sql_update, insert_data)
 
 		return out_of_date_folders
 
@@ -150,16 +163,16 @@ class ImageCache:
 		for dir in modified_folders:
 			for file in os.listdir(dir):
 				base, extension = os.path.splitext(file)
-				if extension.lower() in EXTENSIONS:
+				if extension.lower() in ImageCache.EXTENSIONS:
 					full_file = os.path.join(dir, file)
 					mod_tm =  os.path.getmtime(full_file)
-					found = self.db.execute(sql_select, (full_file,)).fetchone()
+					found = self.__db.execute(sql_select, (full_file,)).fetchone()
 					if not found or found['last_modified'] < mod_tm:
 						out_of_date_files.append(full_file)
 						insert_data.append([dir, base, extension.lstrip("."), mod_tm])
 
 		if len(insert_data):
-			self.db.executemany(sql_update, insert_data)
+			self.__db.executemany(sql_update, insert_data)
 
 		return out_of_date_files
 
@@ -180,30 +193,30 @@ class ImageCache:
 			insert_data.append(vals)
 
 		if len(insert_data):
-			self.db.executemany(sql_insert, insert_data)
+			self.__db.executemany(sql_insert, insert_data)
 
 	def __purge_missing_files_and_folders(self):
 		# Find folders in the db that are no longer on disk
 		folder_id_list = []
-		for row in self.db.execute('SELECT folder_id, name from folder'):
+		for row in self.__db.execute('SELECT folder_id, name from folder'):
 			if not os.path.exists(row['name']):
 				folder_id_list.append([row['folder_id']])
 
 		# Delete any non-existent folders from the db. Note, this will automatically
 		# remove orphaned records from the 'file' and 'meta' tables
 		if len(folder_id_list):
-			self.db.executemany('DELETE FROM folder WHERE folder_id = ?', folder_id_list)
+			self.__db.executemany('DELETE FROM folder WHERE folder_id = ?', folder_id_list)
 
 		# Find files in the db that are no longer on disk
 		file_id_list = []
-		for row in self.db.execute('SELECT file_id, file from all_data'):
+		for row in self.__db.execute('SELECT file_id, file from all_data'):
 			if not os.path.exists(row['file']):
 				file_id_list.append([row['file_id']])
 
 		# Delete any non-existent files from the db. Note, this will automatically
 		# remove matching records from the 'meta' table as well.
 		if len(file_id_list):
-			self.db.executemany('DELETE FROM file WHERE file_id = ?', file_id_list)
+			self.__db.executemany('DELETE FROM file WHERE file_id = ?', file_id_list)
 
 	def __get_exif_info(self, file_path_name):
 		exifs = GetImageMeta(file_path_name)
@@ -246,3 +259,4 @@ class ImageCache:
 if __name__ == "__main__":
 	cache = ImageCache(picture_dir='/home/pi/Pictures')
 	cache.update_cache()
+	#items = cache.query_cache("make like '%google%'", "exif_datetime asc")
