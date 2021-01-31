@@ -44,8 +44,16 @@ class ImageCache:
 			ORDER BY {1}
 		""".format(where_clause, sort_clause)
 
-		cursor.execute(sql)
-		return cursor.fetchall()
+		return cursor.execute(sql).fetchall()
+
+	def get_file_info(self, file_id):
+		sql = "SELECT * FROM all_data where file_id = {0}".format(file_id)
+		result = self.__db.execute(sql).fetchone()
+		dict = {}
+		for key in result.keys():
+			dict[key] = result[key]
+
+		return dict
 
 	def __create_open_db(self, db_file):
 
@@ -259,4 +267,5 @@ class ImageCache:
 if __name__ == "__main__":
 	cache = ImageCache(picture_dir='/home/pi/Pictures')
 	cache.update_cache()
-	#items = cache.query_cache("make like '%google%'", "exif_datetime asc")
+	# items = cache.query_cache("make like '%google%'", "exif_datetime asc")
+	# info = cache.get_file_info(12)
