@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import time
+import logging
 from get_image_meta import GetImageMeta
 
 EXTENSIONS = ['.png','.jpg','.jpeg','.heif','.heic']
@@ -10,28 +11,28 @@ class ImageCache:
 	def __init__(self, picture_dir='/home/pi/Pictures'):
 		self.picture_dir = picture_dir
 		self.db_file = "pictureframe2.db3"
+		self.db = self.create_open_db(self.db_file)
 
 	def update_cache(self):
 
 		t0 = time.time()
 
-		# create the db file if it doesn't yet exist
-		db = self.create_open_db(self.db_file)
-
 		# update the db with info for any added or modified folders since last db refresh
-		modified_folders = self.update_modified_folders(db)
+		modified_folders = self.update_modified_folders()
 
 		# update the db with info for any added or modified files since the last db refresh
-		modified_files = self.update_modified_files(db, modified_folders)
+		modified_files = self.update_modified_files(modified_folders)
 
 		# update the meta data for any added or modified files since the last db refresh
-		self.update_meta_data(db, modified_files)
+		self.update_meta_data(modified_files)
 
 		# remove any files or folders from the db that are no longer on disk
-		self.remove_missing_files_and_folders(db)
+		self.remove_missing_files_and_folders()
 
 		t1 = time.time()
 		print("Total: ", t1-t0)
+
+		self.db.commit()
 
 	def create_open_db(self, db_file):
 
@@ -65,6 +66,8 @@ class ImageCache:
 				model TEXT,
 				lens TEXT,
 				rating INTEGER,
+				latitude TEXT,
+				longitude TEXT,
 				width INTEGER DEFAULT 0 NOT NULL,
 				height INTEGER DEFAULT 0 NOT NULL
 			)"""
@@ -113,7 +116,7 @@ class ImageCache:
 
 		return db
 
-	def update_modified_folders(self, db):
+	def update_modified_folders(self):
 		out_of_date_folders = []
 		insert_data = []
 		sql_select = "SELECT * FROM folder WHERE name = ?"
@@ -126,19 +129,18 @@ class ImageCache:
 		sql_update = "UPDATE folder SET last_modified = ? WHERE name = ?"
 		for dir in [d[0] for d in os.walk(self.picture_dir)]:
 			mod_tm = int(os.stat(dir).st_mtime)
-			found = db.execute(sql_select, (dir,)).fetchone()
+			found = self.db.execute(sql_select, (dir,)).fetchone()
 			if not found or found['last_modified'] < mod_tm:
 				out_of_date_folders.append(dir)
 				insert_data.append([mod_tm, dir])
 
 		if len(insert_data):
-			db.executemany(sql_insert, insert_data)
-			db.executemany(sql_update, insert_data)
-			db.commit()
+			self.db.executemany(sql_insert, insert_data)
+			self.db.executemany(sql_update, insert_data)
 
 		return out_of_date_folders
 
-	def update_modified_files(self, db, modified_folders):
+	def update_modified_files(self, modified_folders):
 		out_of_date_files = []
 		insert_data = []
 		# Here, we can get away with INSERT OR REPLACE as a change to the file's db id
@@ -151,14 +153,13 @@ class ImageCache:
 				if extension.lower() in EXTENSIONS:
 					full_file = os.path.join(dir, file)
 					mod_tm =  os.path.getmtime(full_file)
-					found = db.execute(sql_select, (full_file,)).fetchone()
+					found = self.db.execute(sql_select, (full_file,)).fetchone()
 					if not found or found['last_modified'] < mod_tm:
 						out_of_date_files.append(full_file)
 						insert_data.append([dir, base, extension.lstrip("."), mod_tm])
 
 		if len(insert_data):
-			db.executemany(sql_update, insert_data)
-			db.commit()
+			self.db.executemany(sql_update, insert_data)
 
 		return out_of_date_files
 
@@ -167,7 +168,7 @@ class ImageCache:
 		ques = ', '.join('?' * len(dict.keys()))
 		return 'INSERT OR REPLACE INTO meta(file_id, {0}) VALUES((SELECT file_id from all_data where file = ?), {1})'.format(columns, ques)
 
-	def update_meta_data(self, db, modified_files):
+	def update_meta_data(self, modified_files):
 		sql_insert = None
 		insert_data = []
 		for file in modified_files:
@@ -179,44 +180,30 @@ class ImageCache:
 			insert_data.append(vals)
 
 		if len(insert_data):
-			db.executemany(sql_insert, insert_data)
-			db.commit()
+			self.db.executemany(sql_insert, insert_data)
 
-	def remove_missing_files_and_folders(self, db):
-		files = []
-		folders = []
-		# Get a list of all files and folders in the defined picture folder
-		for (dirpath, dirnames, filenames) in os.walk(self.picture_dir):
-			for f in filenames:
-				files.append(os.path.join(dirpath, f))
-			for d in dirnames:
-				folders.append(os.path.join(dirpath, d))
-
+	def remove_missing_files_and_folders(self):
 		# Find folders in the db that are no longer on disk
 		folder_id_list = []
-		for row in db.execute('SELECT folder_id, name from folder'):
+		for row in self.db.execute('SELECT folder_id, name from folder'):
 			if not os.path.exists(row['name']):
 				folder_id_list.append([row['folder_id']])
 
 		# Delete any non-existent folders from the db. Note, this will automatically
 		# remove orphaned records from the 'file' and 'meta' tables
 		if len(folder_id_list):
-			db.executemany('DELETE FROM folder WHERE folder_id = ?', folder_id_list)
+			self.db.executemany('DELETE FROM folder WHERE folder_id = ?', folder_id_list)
 
 		# Find files in the db that are no longer on disk
 		file_id_list = []
-		for row in db.execute('SELECT file_id, file from all_data'):
+		for row in self.db.execute('SELECT file_id, file from all_data'):
 			if not os.path.exists(row['file']):
 				file_id_list.append([row['file_id']])
 
 		# Delete any non-existent files from the db. Note, this will automatically
 		# remove matching records from the 'meta' table as well.
 		if len(file_id_list):
-			db.executemany('DELETE FROM file WHERE file_id = ?', file_id_list)
-
-		# If we updated anything, commit the changes
-		if len(folder_id_list) or len(file_id_list):
-			db.commit()
+			self.db.executemany('DELETE FROM file WHERE file_id = ?', file_id_list)
 
 	def get_exif_info(self, file_path_name):
 		exifs = GetImageMeta(file_path_name)
@@ -246,6 +233,12 @@ class ImageCache:
 			e['exif_datetime'] = time.mktime(time.strptime(val, '%Y:%m:%d %H:%M:%S'))
 		else:
 			e['exif_datetime'] = os.path.getmtime(file_path_name)
+
+		gps = exifs.get_location()
+		lat = gps['latitude']
+		lon = gps['longitude']
+		e['latitude'] = round(lat, 4) if lat else lat
+		e['longitude'] = round(lon, 4) if lon else lon
 
 		return e
 
