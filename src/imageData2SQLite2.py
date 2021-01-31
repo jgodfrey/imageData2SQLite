@@ -11,30 +11,30 @@ class ImageCache:
 	def __init__(self, picture_dir='/home/pi/Pictures'):
 		self.picture_dir = picture_dir
 		self.db_file = "pictureframe2.db3"
-		self.db = self.create_open_db(self.db_file)
+		self.db = self.__create_open_db(self.db_file)
 
 	def update_cache(self):
 
 		t0 = time.time()
 
 		# update the db with info for any added or modified folders since last db refresh
-		modified_folders = self.update_modified_folders()
+		modified_folders = self.__update_modified_folders()
 
 		# update the db with info for any added or modified files since the last db refresh
-		modified_files = self.update_modified_files(modified_folders)
+		modified_files = self.__update_modified_files(modified_folders)
 
 		# update the meta data for any added or modified files since the last db refresh
-		self.update_meta_data(modified_files)
+		self.__update_meta_data(modified_files)
 
 		# remove any files or folders from the db that are no longer on disk
-		self.remove_missing_files_and_folders()
+		self.__purge_missing_files_and_folders()
 
 		t1 = time.time()
 		print("Total: ", t1-t0)
 
 		self.db.commit()
 
-	def create_open_db(self, db_file):
+	def __create_open_db(self, db_file):
 
 		sql_folder_table = """
 			CREATE TABLE IF NOT EXISTS folder (
@@ -116,7 +116,7 @@ class ImageCache:
 
 		return db
 
-	def update_modified_folders(self):
+	def __update_modified_folders(self):
 		out_of_date_folders = []
 		insert_data = []
 		sql_select = "SELECT * FROM folder WHERE name = ?"
@@ -140,7 +140,7 @@ class ImageCache:
 
 		return out_of_date_folders
 
-	def update_modified_files(self, modified_folders):
+	def __update_modified_files(self, modified_folders):
 		out_of_date_files = []
 		insert_data = []
 		# Here, we can get away with INSERT OR REPLACE as a change to the file's db id
@@ -163,18 +163,18 @@ class ImageCache:
 
 		return out_of_date_files
 
-	def get_meta_sql_from_dict(self, dict):
+	def __get_meta_sql_from_dict(self, dict):
 		columns = ', '.join(dict.keys())
 		ques = ', '.join('?' * len(dict.keys()))
 		return 'INSERT OR REPLACE INTO meta(file_id, {0}) VALUES((SELECT file_id from all_data where file = ?), {1})'.format(columns, ques)
 
-	def update_meta_data(self, modified_files):
+	def __update_meta_data(self, modified_files):
 		sql_insert = None
 		insert_data = []
 		for file in modified_files:
-			meta = self.get_exif_info(file)
+			meta = self.__get_exif_info(file)
 			if sql_insert == None:
-				sql_insert = self.get_meta_sql_from_dict(meta)
+				sql_insert = self.__get_meta_sql_from_dict(meta)
 			vals = list(meta.values())
 			vals.insert(0, file)
 			insert_data.append(vals)
@@ -182,7 +182,7 @@ class ImageCache:
 		if len(insert_data):
 			self.db.executemany(sql_insert, insert_data)
 
-	def remove_missing_files_and_folders(self):
+	def __purge_missing_files_and_folders(self):
 		# Find folders in the db that are no longer on disk
 		folder_id_list = []
 		for row in self.db.execute('SELECT folder_id, name from folder'):
@@ -205,7 +205,7 @@ class ImageCache:
 		if len(file_id_list):
 			self.db.executemany('DELETE FROM file WHERE file_id = ?', file_id_list)
 
-	def get_exif_info(self, file_path_name):
+	def __get_exif_info(self, file_path_name):
 		exifs = GetImageMeta(file_path_name)
 		# Dict to store interesting EXIF data
 		# Note, the 'key' must match a field in the 'meta' table
